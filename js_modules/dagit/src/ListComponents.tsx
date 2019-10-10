@@ -30,6 +30,7 @@ export const RowContainer = styled.div`
   padding: 2px 10px;
   text-decoration: none;
 `;
+
 export const RowColumn = styled.div`
   flex: 1;
   padding: 7px 10px;

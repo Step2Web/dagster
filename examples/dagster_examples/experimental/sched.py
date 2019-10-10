@@ -1,4 +1,5 @@
 import datetime
+import os
 
 from dagster_cron import SystemCronScheduler
 
@@ -12,6 +13,14 @@ def define_scheduler():
         weekno = datetime.datetime.today().weekday()
         # Returns true if current day is a weekday
         return weekno < 5
+
+    stats_every_minute = ScheduleDefinition(
+        name='daily_stats_schedule',
+        cron_schedule='* * * * *',
+        environment_dict={'resources': {'slack': {'config': {'token': os.getenv('SLACK_TOKEN')}}}},
+        pipeline_name='stats_pipeline',
+        mode='default',
+    )
 
     many_events_every_minute = ScheduleDefinition(
         name="many_events_every_min",
@@ -49,4 +58,9 @@ def define_scheduler():
         },
     )
 
-    return [many_events_every_minute, log_spew_hourly, pandas_hello_world_hourly]
+    return [
+        many_events_every_minute,
+        log_spew_hourly,
+        stats_every_minute,
+        pandas_hello_world_hourly,
+    ]

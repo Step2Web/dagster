@@ -12,7 +12,9 @@ import {
   MenuDivider,
   Popover,
   NonIdealState,
-  Tooltip
+  Tooltip,
+  Tag,
+  Intent
 } from "@blueprintjs/core";
 import { HighlightedCodeBlock } from "../HighlightedCodeBlock";
 import {
@@ -138,7 +140,14 @@ const ScheduleTable: React.FunctionComponent<ScheduleTableProps> = props => {
 const ScheduleRow: React.FunctionComponent<{
   schedule: SchedulesRootQuery_scheduler_Scheduler_runningSchedules;
 }> = ({ schedule }) => {
-  const { scheduleId, status, scheduleDefinition, runs, logsPath } = schedule;
+  const {
+    scheduleId,
+    status,
+    scheduleDefinition,
+    runs,
+    logsPath,
+    logErrorString
+  } = schedule;
   const {
     name,
     cronSchedule,
@@ -146,6 +155,7 @@ const ScheduleRow: React.FunctionComponent<{
     environmentConfigYaml
   } = scheduleDefinition;
   const executionParams = JSON.parse(executionParamsString);
+  const logError = logErrorString ? JSON.parse(logErrorString) : null;
   const pipelineName = executionParams.selector.name;
   const mode = executionParams.mode;
 
@@ -201,56 +211,64 @@ const ScheduleRow: React.FunctionComponent<{
   };
 
   return (
-    <RowContainer key={name}>
-      <RowColumn style={{ maxWidth: 60, paddingLeft: 0, textAlign: "center" }}>
-        <Switch
-          checked={status === ScheduleStatus.RUNNING}
-          large={true}
-          innerLabelChecked="on"
-          innerLabel="off"
-          onChange={() => {
-            if (status === ScheduleStatus.RUNNING) {
-              stopSchedule({
-                variables: { scheduleName: name },
-                update: store =>
-                  optimisticUpdateStore(store, name, ScheduleStatus.STOPPED)
-              });
-            } else {
-              startSchedule({
-                variables: { scheduleName: name },
-                update: store =>
-                  optimisticUpdateStore(store, name, ScheduleStatus.RUNNING)
-              });
-            }
-          }}
-        />
-      </RowColumn>
-      <RowColumn style={{ flex: 1.4 }}>
-        <ScheduleName>{name}</ScheduleName>
-      </RowColumn>
-      <RowColumn>
-        <Link style={{ display: "block" }} to={`/p/${pipelineName}/explore/`}>
-          <Icon icon="diagram-tree" /> {pipelineName}
-        </Link>
-      </RowColumn>
-      <RowColumn
-        style={{
-          maxWidth: 150
-        }}
-      >
-        <Tooltip
-          className={Classes.TOOLTIP_INDICATOR}
-          position={"top"}
-          content={cronSchedule}
+    <>
+      <RowContainer key={name}>
+        <RowColumn
+          style={{ maxWidth: 60, paddingLeft: 0, textAlign: "center" }}
         >
-          {getNaturalLanguageCronString(cronSchedule)}
-        </Tooltip>
-      </RowColumn>
-      <RowColumn style={{ flex: 1 }}>
-        {runs && runs.length > 0
-          ? runs.slice(0, NUM_RUNS_TO_DISPLAY).map(run => (
+          <Switch
+            checked={status === ScheduleStatus.RUNNING}
+            large={true}
+            innerLabelChecked="on"
+            innerLabel="off"
+            onChange={() => {
+              if (status === ScheduleStatus.RUNNING) {
+                stopSchedule({
+                  variables: { scheduleName: name },
+                  update: store =>
+                    optimisticUpdateStore(store, name, ScheduleStatus.STOPPED)
+                });
+              } else {
+                startSchedule({
+                  variables: { scheduleName: name },
+                  update: store =>
+                    optimisticUpdateStore(store, name, ScheduleStatus.RUNNING)
+                });
+              }
+            }}
+          />
+        </RowColumn>
+        <RowColumn style={{ flex: 1.4 }}>
+          <ScheduleName>{name}</ScheduleName>
+        </RowColumn>
+        <RowColumn>
+          <Link style={{ display: "block" }} to={`/p/${pipelineName}/explore/`}>
+            <Icon icon="diagram-tree" /> {pipelineName}
+          </Link>
+        </RowColumn>
+        <RowColumn
+          style={{
+            maxWidth: 150
+          }}
+        >
+          <Tooltip
+            className={Classes.TOOLTIP_INDICATOR}
+            position={"top"}
+            content={cronSchedule}
+          >
+            {getNaturalLanguageCronString(cronSchedule)}
+          </Tooltip>
+        </RowColumn>
+        <RowColumn style={{ flex: 1 }}>
+          {runs &&
+            runs.length > 0 &&
+            runs.slice(0, NUM_RUNS_TO_DISPLAY).map(run => (
               <div
-                style={{ display: "inline", cursor: "pointer", marginRight: 5 }}
+                style={{
+                  display: "inline",
+                  cursor: "pointer",
+                  marginRight: 5
+                }}
                 key={run.runId}
               >
                 <Link to={`/p/${run.pipeline.name}/runs/${run.runId}`}>
@@ -259,83 +277,140 @@ const ScheduleRow: React.FunctionComponent<{
                   </Tooltip>
                 </Link>
               </div>
-            ))
-          : "-"}
-        {runs && runs.length > NUM_RUNS_TO_DISPLAY && (
-          <Link
-            to={`/runs?q=tag:${encodeURIComponent(
-              "dagster/schedule_id"
-            )}=${scheduleId}`}
-          >
-            {" "}
-            +{runs.length - NUM_RUNS_TO_DISPLAY} more
-          </Link>
-        )}
-      </RowColumn>
-      <RowColumn style={{ flex: 1 }}>
-        {mostRecentRun
-          ? unixTimestampToString(mostRecentRun.stats.startTime)
-          : "No previous runs"}
-      </RowColumn>
-      <RowColumn
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          flex: 1
-        }}
-      >
-        <div style={{ flex: 1 }}>
-          <div>{`Mode: ${mode}`}</div>
-        </div>
-        <Popover
-          content={
-            <Menu>
-              <MenuItem
-                text="View Configuration..."
-                icon="share"
-                onClick={() =>
-                  showCustomAlert({
-                    title: "Config",
-                    body: (
-                      <HighlightedCodeBlock
-                        value={environmentConfigYaml}
-                        languages={["yaml"]}
-                      />
-                    )
-                  })
-                }
-              />
-              <MenuItem
-                text="Open in Execute Tab..."
-                icon="edit"
-                target="_blank"
-                href={`/p/${
-                  executionParams.selector.name
-                }/execute/setup?${qs.stringify({
-                  mode: executionParams.mode,
-                  config: environmentConfigYaml,
-                  solidSubset: executionParams.selector.solidSubset
-                })}`}
-              />
-              <MenuDivider />
-              <MenuItem
-                text="Copy Path to Debug Logs"
-                icon="clipboard"
-                onClick={(e: React.MouseEvent<any>) => copyValue(e, logsPath)}
-              />
-            </Menu>
-          }
-          position={"bottom"}
+            ))}
+          {runs && runs.length > NUM_RUNS_TO_DISPLAY ? (
+            <Link
+              to={`/runs?q=tag:${encodeURIComponent(
+                "dagster/schedule_id"
+              )}=${scheduleId}`}
+            >
+              {" "}
+              +{runs.length - NUM_RUNS_TO_DISPLAY} more
+            </Link>
+          ) : (
+            "-"
+          )}
+        </RowColumn>
+        <RowColumn style={{ flex: 1 }}>
+          {mostRecentRun
+            ? unixTimestampToString(mostRecentRun.stats.startTime)
+            : "No previous runs"}
+
+          {logError && (
+            <ErrorTag>
+              <Tag intent={Intent.WARNING}>
+                Latest run failed:
+                <ErrorLink
+                  onClick={() =>
+                    showCustomAlert({
+                      title: "Error",
+                      body: (
+                        <>
+                          <ErrorHeader>
+                            {logError.__typename && logError.__typename}
+                          </ErrorHeader>
+                          <ErrorWrapper>
+                            <HighlightedCodeBlock
+                              value={JSON.stringify(logError, null, 2)}
+                              languages={["json"]}
+                            />
+                          </ErrorWrapper>
+                        </>
+                      )
+                    })
+                  }
+                >
+                  View Error
+                </ErrorLink>
+              </Tag>
+            </ErrorTag>
+          )}
+        </RowColumn>
+        <RowColumn
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            flex: 1
+          }}
         >
-          <Button minimal={true} icon="chevron-down" />
-        </Popover>
-      </RowColumn>
-    </RowContainer>
+          <div style={{ flex: 1 }}>
+            <div>{`Mode: ${mode}`}</div>
+          </div>
+          <Popover
+            content={
+              <Menu>
+                <MenuItem
+                  text="View Configuration..."
+                  icon="share"
+                  onClick={() =>
+                    showCustomAlert({
+                      title: "Config",
+                      body: (
+                        <HighlightedCodeBlock
+                          value={environmentConfigYaml}
+                          languages={["yaml"]}
+                        />
+                      )
+                    })
+                  }
+                />
+                <MenuItem
+                  text="Open in Execute Tab..."
+                  icon="edit"
+                  target="_blank"
+                  href={`/p/${
+                    executionParams.selector.name
+                  }/execute/setup?${qs.stringify({
+                    mode: executionParams.mode,
+                    config: environmentConfigYaml,
+                    solidSubset: executionParams.selector.solidSubset
+                  })}`}
+                />
+                <MenuDivider />
+                <MenuItem
+                  text="Copy Path to Debug Logs"
+                  icon="clipboard"
+                  onClick={(e: React.MouseEvent<any>) => copyValue(e, logsPath)}
+                />
+              </Menu>
+            }
+            position={"bottom"}
+          >
+            <Button minimal={true} icon="chevron-down" />
+          </Popover>
+        </RowColumn>
+      </RowContainer>
+    </>
   );
 };
 
+const ErrorTag = styled.div`
+  display: block;
+  margin-top: 5px;
+`;
+
+const ErrorLink = styled.a`
+  color: white;
+  text-decoration: underline;
+  margin-left: 10px;
+`;
+
 const ScheduleName = styled.pre`
   margin: 0;
+`;
+
+const ErrorHeader = styled.h3`
+  color: #b05c47;
+  font-weight: 400;
+  margin: 0.5em 0 0.25em;
+`;
+
+const ErrorWrapper = styled.pre`
+  background-color: rgba(206, 17, 38, 0.05);
+  border: 1px solid #d17257;
+  border-radius: 3px;
+  max-width: 90vw;
+  padding: 1em 2em;
 `;
 
 const START_SCHEDULE_MUTATION = gql`
@@ -375,6 +450,7 @@ export const SCHEDULES_ROOT_QUERY = gql`
             cronSchedule
           }
           logsPath
+          logErrorString
           runs {
             runId
             pipeline {

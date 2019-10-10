@@ -882,6 +882,8 @@ type RunningSchedule {
   status: ScheduleStatus!
   runs: [PipelineRun!]!
   logsPath: String!
+  logErrorString: String
+  allLogErrorStrings: [String]
 }
 
 type RunningScheduleResult {

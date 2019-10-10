@@ -89,9 +89,14 @@ def execute_query_from_cli(handle, query, variables=None, log=False, log_dir=Non
     )
     str_res = seven.json.dumps(result_dict)
 
-    # Since this the entry point for CLI execution, some tests depend on us putting the result on
-    # stdout
-    print(str_res)
+    if log:
+        check.str_param(log_dir, 'log_dir')
+        with open(log_dir, 'a+') as f:
+            f.write(str_res + "\n")
+    else:
+        # Since this the entry point for CLI execution, some tests depend on us putting the result on
+        # stdout
+        print(str_res)
 
     return str_res
 
@@ -139,7 +144,9 @@ PREDEFINED_QUERIES = {
     type=click.STRING,
     help='A JSON encoded string containing the variables for GraphQL execution.',
 )
-def ui(text, file, predefined, variables, **kwargs):
+@click.option('--log', is_flag=True, help='Record logs of pipeline runs')
+@click.option('--log-dir', help="Directory to record logs to", default='dagit_run_logs/')
+def ui(text, file, predefined, variables, log, log_dir, **kwargs):
     handle = handle_for_repo_cli_args(kwargs)
 
     query = None
@@ -155,7 +162,7 @@ def ui(text, file, predefined, variables, **kwargs):
             'to select GraphQL document to execute.'
         )
 
-    execute_query_from_cli(handle, query, variables)
+    execute_query_from_cli(handle, query, variables, log, log_dir)
 
 
 def main():

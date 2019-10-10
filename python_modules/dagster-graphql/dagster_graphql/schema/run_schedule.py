@@ -1,3 +1,6 @@
+import json
+import os
+
 import yaml
 from dagster_graphql import dauphin
 from dagster_graphql.implementation.fetch_schedules import get_dagster_schedule_def
@@ -73,6 +76,7 @@ class DauphinRunningSchedule(dauphin.ObjectType):
     status = dauphin.NonNull('ScheduleStatus')
     runs = dauphin.non_null_list('PipelineRun')
     logs_path = dauphin.NonNull(dauphin.String)
+    log_error_string = dauphin.Field(dauphin.String)
 
     def __init__(self, graphene_info, schedule):
         self._schedule = check.inst_param(schedule, 'schedule', Schedule)
@@ -86,6 +90,32 @@ class DauphinRunningSchedule(dauphin.ObjectType):
             python_path=schedule.python_path,
             repository_path=schedule.repository_path,
         )
+
+    def resolve_log_error_string(self, graphene_info):
+        scheduler = graphene_info.context.get_scheduler()
+        log_path = scheduler.log_path_for_schedule(self._schedule.name)
+
+        # If the last line of the scheduler log file is not StartPipelineExecutionSuccess or
+        # ScheduledExecutionBlocked, then return it as JSON
+        if os.path.isfile(log_path):
+            with open(log_path, 'r') as f:
+                lines = f.readlines()
+                last_line = lines[-1]
+
+                start_scheduled_execution_response = json.loads(last_line)
+                typename = start_scheduled_execution_response['data']['startScheduledExecution'][
+                    '__typename'
+                ]
+
+                if (
+                    typename != 'StartPipelineExecutionSuccess'
+                    and typename != 'ScheduledExecutionBlocked'
+                ):
+                    return json.dumps(
+                        start_scheduled_execution_response['data']['startScheduledExecution']
+                    )
+
+        return None
 
     def resolve_logs_path(self, graphene_info):
         scheduler = graphene_info.context.get_scheduler()

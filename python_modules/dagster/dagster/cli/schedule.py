@@ -205,8 +205,7 @@ def execute_list_command(running_filter, stopped_filter, name_filter, verbose, c
             print_fn(schedule_def.name)
             continue
 
-        flag = "[{status}]".format(status=schedule.status.value) if schedule else ""
-        schedule_title = 'Schedule: {name} {flag}'.format(name=schedule_def.name, flag=flag)
+        schedule_title = 'Schedule: {name}'.format(name=schedule_def.name)
 
         if not first:
             print_fn('*' * len(schedule_title))

@@ -135,7 +135,7 @@ class SystemCronScheduler(Scheduler):
             export LANG=en_US.UTF-8
             {env_vars}
 
-            {dagster_graphql_path} -p startScheduledExecution -v '{variables}' -y "{repo_path}" >> {log_file} 2>&1
+            {dagster_graphql_path} -p startScheduledExecution -v '{variables}' -y "{repo_path}" --log --log-dir {log_file}
         '''.format(
             dagster_graphql_path=dagster_graphql_path,
             repo_path=schedule.repository_path,
