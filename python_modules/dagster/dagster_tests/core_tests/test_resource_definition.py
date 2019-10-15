@@ -443,11 +443,7 @@ def test_resource_init_failure():
 
     execution_plan = create_execution_plan(pipeline)
 
-    step_events = execute_plan(
-        execution_plan,
-        step_keys_to_execute=[step.key for step in execution_plan.topological_steps()],
-        instance=DagsterInstance.ephemeral(),
-    )
+    step_events = execute_plan(execution_plan, instance=DagsterInstance.ephemeral())
 
     assert step_events[0].event_type_value == 'PIPELINE_INIT_FAILURE'
 

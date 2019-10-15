@@ -200,23 +200,11 @@ def _check_start_pipeline_execution_errors(
                     graphene_info.schema.type_named('InvalidStepError')(invalid_step_key=step_key)
                 )
 
-    if reexecution_config and reexecution_config.step_output_handles:
-        for step_output_handle in reexecution_config.step_output_handles:
-            if not execution_plan.has_step(step_output_handle.step_key):
+    if reexecution_config and reexecution_config.force_reexecution_step_keys:
+        for step_key in reexecution_config.force_reexecution_step_keys:
+            if not execution_plan.has_step(step_key):
                 raise UserFacingGraphQLError(
-                    graphene_info.schema.type_named('InvalidStepError')(
-                        invalid_step_key=step_output_handle.step_key
-                    )
-                )
-
-            step = execution_plan.get_step_by_key(step_output_handle.step_key)
-
-            if not step.has_step_output(step_output_handle.output_name):
-                raise UserFacingGraphQLError(
-                    graphene_info.schema.type_named('InvalidOutputError')(
-                        step_key=step_output_handle.step_key,
-                        invalid_output_name=step_output_handle.output_name,
-                    )
+                    graphene_info.schema.type_named('InvalidStepError')(invalid_step_key=step_key)
                 )
 
 
@@ -356,6 +344,7 @@ def _do_execute_plan(graphene_info, execution_params, dauphin_pipeline):
                 raise UserFacingGraphQLError(
                     graphene_info.schema.type_named('InvalidStepError')(invalid_step_key=step_key)
                 )
+        execution_plan = execution_plan.build_subset_plan(execution_params.step_keys)
 
     event_logs = []
 
@@ -369,7 +358,6 @@ def _do_execute_plan(graphene_info, execution_params, dauphin_pipeline):
         execution_plan=execution_plan,
         environment_dict=execution_params.environment_dict,
         run_config=run_config,
-        step_keys_to_execute=execution_params.step_keys,
         instance=graphene_info.context.instance,
     )
 

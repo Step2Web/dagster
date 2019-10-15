@@ -34,6 +34,12 @@ class IntermediatesManager(six.with_metaclass(ABCMeta)):  # pylint: disable=no-i
     def all_inputs_covered(self, context, step):
         return len(self.uncovered_inputs(context, step)) == 0
 
+    def all_outputs_covered(self, context, step):
+        return all(
+            self.has_intermediate(context, StepOutputHandle.from_step(step, step_output.name))
+            for step_output in step.step_outputs
+        )
+
     def uncovered_inputs(self, context, step):
         from dagster.core.execution.plan.objects import ExecutionStep
 

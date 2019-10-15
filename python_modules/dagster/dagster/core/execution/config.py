@@ -112,29 +112,18 @@ class MultiprocessExecutorConfig(ExecutorConfig):
 
 
 @whitelist_for_serdes
-class ReexecutionConfig(namedtuple('_ReexecutionConfig', 'previous_run_id step_output_handles')):
-    @staticmethod
-    def from_previous_run(previous_run_result):
-        from .results import PipelineExecutionResult
-        from .plan.objects import StepOutputHandle
-        from dagster.core.events import DagsterEventType, ObjectStoreOperationType
-
-        check.opt_inst_param(previous_run_result, 'previous_run_result', PipelineExecutionResult)
-
-        step_output_handles = []
-        for step_key, events in previous_run_result.events_by_step_key.items():
-            if not events or not any([e.is_step_success for e in events]):
-                continue
-
-            step_output_handles += [
-                StepOutputHandle(step_key, event.event_specific_data.value_name)
-                for event in events
-                if (
-                    event.event_type_value == DagsterEventType.OBJECT_STORE_OPERATION.value
-                    and event.event_specific_data.op == ObjectStoreOperationType.SET_OBJECT.value
-                )
-            ]
-        return ReexecutionConfig(previous_run_result.run_id, step_output_handles)
+class ReexecutionConfig(
+    namedtuple(
+        '_ReexecutionConfig', 'previous_run_id step_output_handles force_reexecution_step_keys'
+    )
+):
+    def __new__(cls, previous_run_id, force_reexecution_step_keys=None):
+        return super(ReexecutionConfig, cls).__new__(
+            cls,
+            previous_run_id=previous_run_id,
+            step_output_handles=[],
+            force_reexecution_step_keys=force_reexecution_step_keys or [],
+        )
 
 
 def check_persistent_storage_requirement(system_storage_def):

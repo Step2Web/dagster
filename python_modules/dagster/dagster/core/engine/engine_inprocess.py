@@ -38,17 +38,16 @@ from .engine_base import IEngine
 
 class InProcessEngine(IEngine):  # pylint: disable=no-init
     @staticmethod
-    def execute(pipeline_context, execution_plan, step_keys_to_execute=None):
+    def execute(pipeline_context, execution_plan, memoization_strategy):
         check.inst_param(pipeline_context, 'pipeline_context', SystemPipelineExecutionContext)
         check.inst_param(execution_plan, 'execution_plan', ExecutionPlan)
-        check.opt_list_param(step_keys_to_execute, 'step_keys_to_execute', of_type=str)
-
-        step_key_set = None if step_keys_to_execute is None else set(step_keys_to_execute)
 
         yield DagsterEvent.engine_event(
             pipeline_context,
             'Executing steps in process (pid: {pid})'.format(pid=os.getpid()),
-            event_specific_data=EngineEventData.in_process(os.getpid(), step_key_set),
+            event_specific_data=EngineEventData.in_process(
+                os.getpid(), set(step.key for step in execution_plan.execution_steps())
+            ),
         )
 
         with time_execution_scope() as timer_result:
@@ -60,18 +59,18 @@ class InProcessEngine(IEngine):  # pylint: disable=no-init
                 ),
             )
 
+            for event in memoization_strategy.generate_events(execution_plan):
+                yield event
+
             failed_or_skipped_steps = set()
 
-            step_levels = execution_plan.topological_step_levels()
+            step_levels = execution_plan.execution_step_levels()
 
             # It would be good to implement a reference tracking algorithm here to
             # garbage collect results that are no longer needed by any steps
             # https://github.com/dagster-io/dagster/issues/811
             for step_level in step_levels:
                 for step in step_level:
-                    if step_key_set and step.key not in step_key_set:
-                        continue
-
                     step_context = pipeline_context.for_step(step)
 
                     with mirror_step_io(step_context):
@@ -113,6 +112,10 @@ class InProcessEngine(IEngine):  # pylint: disable=no-init
                             yield DagsterEvent.step_skipped_event(step_context)
                             continue
 
+                        if memoization_strategy.can_skip(step):
+                            yield DagsterEvent.step_skipped_event(step_context)
+                            continue
+
                         for step_event in check.generator(
                             dagster_event_sequence_for_step(step_context)
                         ):
@@ -127,7 +130,7 @@ class InProcessEngine(IEngine):  # pylint: disable=no-init
             'Finished steps in process (pid: {pid}) in {duration_ms}'.format(
                 pid=os.getpid(), duration_ms=format_duration(timer_result.millis)
             ),
-            event_specific_data=EngineEventData.in_process(os.getpid(), step_key_set),
+            event_specific_data=EngineEventData.in_process(os.getpid()),
         )
 
 
