@@ -114,8 +114,7 @@ def test_using_s3_for_subplan(s3_bucket):
         execute_plan(
             execution_plan,
             environment_dict=environment_dict,
-            run_config=RunConfig(run_id=run_id),
-            step_keys_to_execute=step_keys,
+            run_config=RunConfig(run_id=run_id, step_keys_to_execute=step_keys),
             instance=instance,
         )
     )
@@ -134,8 +133,7 @@ def test_using_s3_for_subplan(s3_bucket):
         execute_plan(
             execution_plan,
             environment_dict=environment_dict,
-            run_config=RunConfig(run_id=run_id),
-            step_keys_to_execute=['add_one.compute'],
+            run_config=RunConfig(run_id=run_id, step_keys_to_execute=['add_one.compute']),
             instance=instance,
         )
     )

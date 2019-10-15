@@ -830,7 +830,7 @@ type Query {
 
 input ReexecutionConfig {
   previousRunId: String!
-  stepOutputHandles: [StepOutputHandle!]!
+  forceReexecutionStepKeys: [String]
 }
 
 type RegularConfigType implements ConfigType {
@@ -1016,11 +1016,6 @@ type StepMaterializationEvent implements MessageEvent & StepEvent {
   level: LogLevel!
   step: ExecutionStep
   materialization: Materialization!
-}
-
-input StepOutputHandle {
-  stepKey: String!
-  outputName: String!
 }
 
 type Subscription {

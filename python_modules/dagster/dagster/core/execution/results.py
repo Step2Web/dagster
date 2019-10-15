@@ -186,7 +186,7 @@ class SolidExecutionResult(object):
     @property
     def skipped(self):
         '''Whether the solid execution was skipped'''
-        return all(
+        return any(
             [
                 step_event.event_type == DagsterEventType.STEP_SKIPPED
                 for step_event in self.compute_step_events

@@ -575,12 +575,12 @@ def test_reexecution():
         pipeline_def, environment_dict={'storage': {'filesystem': {}}}, instance=instance
     )
     assert pipeline_result.success
+    assert pipeline_result.result_for_solid('return_one').output_value() == 1
     assert pipeline_result.result_for_solid('add_one').output_value() == 2
 
     reexecution_run_config = RunConfig(
         reexecution_config=ReexecutionConfig(
-            previous_run_id=pipeline_result.run_id,
-            step_output_handles=[StepOutputHandle('return_one.compute')],
+            previous_run_id=pipeline_result.run_id, force_reexecution_step_keys=['add_one.compute']
         )
     )
     reexecution_result = execute_pipeline(
@@ -592,7 +592,8 @@ def test_reexecution():
 
     assert reexecution_result.success
     assert len(reexecution_result.solid_result_list) == 2
-    assert reexecution_result.result_for_solid('return_one').output_value() == 1
+    assert reexecution_result.result_for_solid('return_one').skipped
+    assert reexecution_result.result_for_solid('add_one').success
     assert reexecution_result.result_for_solid('add_one').output_value() == 2
 
 

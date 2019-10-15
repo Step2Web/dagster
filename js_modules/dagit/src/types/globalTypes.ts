@@ -88,12 +88,7 @@ export interface PipelineRunsFilter {
 
 export interface ReexecutionConfig {
   previousRunId: string;
-  stepOutputHandles: StepOutputHandle[];
-}
-
-export interface StepOutputHandle {
-  stepKey: string;
-  outputName: string;
+  forceReexecutionStepKeys?: (string | null)[] | null;
 }
 
 //==============================================================

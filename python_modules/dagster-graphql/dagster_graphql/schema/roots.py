@@ -209,16 +209,12 @@ class DauphinReexecutionConfig(dauphin.InputObjectType):
         name = 'ReexecutionConfig'
 
     previousRunId = dauphin.NonNull(dauphin.String)
-    stepOutputHandles = dauphin.non_null_list(DauphinStepOutputHandle)
+    forceReexecutionStepKeys = dauphin.List(dauphin.String)
 
     def to_reexecution_config(self):
         from dagster.core.execution.config import ReexecutionConfig
-        from dagster.core.execution.plan.objects import StepOutputHandle
 
-        return ReexecutionConfig(
-            self.previousRunId,
-            list(map(lambda g: StepOutputHandle(g.stepKey, g.outputName), self.stepOutputHandles)),
-        )
+        return ReexecutionConfig(self.previousRunId, self.forceReexecutionStepKeys or [])
 
 
 class DauphinDeletePipelineRunSuccess(dauphin.ObjectType):
