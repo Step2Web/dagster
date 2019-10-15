@@ -16,7 +16,6 @@ from dagster.core.errors import (
     DagsterExecutionStepNotFoundError,
     DagsterInvariantViolationError,
     DagsterRunNotFoundError,
-    DagsterStepOutputNotFoundError,
 )
 from dagster.core.events import get_step_output_event
 from dagster.core.execution.api import create_execution_plan, execute_plan
@@ -80,8 +79,9 @@ def test_execution_plan_reexecution():
     run_config = RunConfig(
         run_id=new_run_id,
         reexecution_config=ReexecutionConfig(
-            previous_run_id=result.run_id, step_output_handles=[StepOutputHandle('add_one.compute')]
+            previous_run_id=result.run_id, force_reexecution_step_keys=['add_two.compute']
         ),
+        step_keys_to_execute=['add_two.compute'],
     )
 
     execution_plan = create_execution_plan(
@@ -89,11 +89,7 @@ def test_execution_plan_reexecution():
     )
 
     step_events = execute_plan(
-        execution_plan,
-        environment_dict=environment_dict,
-        run_config=run_config,
-        step_keys_to_execute=['add_two.compute'],
-        instance=instance,
+        execution_plan, environment_dict=environment_dict, run_config=run_config, instance=instance
     )
 
     store = FilesystemIntermediateStore.for_instance(instance, new_run_id)
@@ -110,11 +106,7 @@ def test_execution_plan_wrong_run_id():
     unrun_id = str(uuid.uuid4())
     environment_dict = env_with_fs({'solids': {'add_one': {'inputs': {'num': {'value': 3}}}}})
 
-    run_config = RunConfig(
-        reexecution_config=ReexecutionConfig(
-            previous_run_id=unrun_id, step_output_handles=[StepOutputHandle('add_one.compute')]
-        )
-    )
+    run_config = RunConfig(reexecution_config=ReexecutionConfig(previous_run_id=unrun_id))
 
     execution_plan = create_execution_plan(
         pipeline_def, environment_dict=environment_dict, run_config=run_config
@@ -152,8 +144,7 @@ def test_execution_plan_wrong_invalid_step_key():
     run_config = RunConfig(
         run_id=new_run_id,
         reexecution_config=ReexecutionConfig(
-            previous_run_id=result.run_id,
-            step_output_handles=[StepOutputHandle('not_valid.compute')],
+            previous_run_id=result.run_id, force_reexecution_step_keys=['not_valid.compute']
         ),
     )
 
@@ -163,60 +154,16 @@ def test_execution_plan_wrong_invalid_step_key():
 
     with pytest.raises(DagsterExecutionStepNotFoundError) as exc_info:
         execute_plan(
-            execution_plan,
+            execution_plan.build_subset_plan(['add_two.compute']),
             environment_dict=environment_dict,
             run_config=run_config,
-            step_keys_to_execute=['add_two.compute'],
             instance=instance,
         )
 
     assert str(exc_info.value) == (
-        'Step not_valid.compute was specified as a step from a previous run. ' 'It does not exist.'
+        '''You specified steps in the ReexecutionConfig that do not exist: '''
+        '''Steps ['not_valid.compute'].'''
     )
-
-
-def test_execution_plan_wrong_invalid_output_name():
-    pipeline_def = define_addy_pipeline()
-    instance = DagsterInstance.ephemeral()
-    old_run_id = str(uuid.uuid4())
-    environment_dict = env_with_fs({'solids': {'add_one': {'inputs': {'num': {'value': 3}}}}})
-    result = execute_pipeline(
-        pipeline_def,
-        environment_dict=environment_dict,
-        run_config=RunConfig(run_id=old_run_id),
-        instance=instance,
-    )
-
-    new_run_id = str(uuid.uuid4())
-
-    run_config = RunConfig(
-        run_id=new_run_id,
-        reexecution_config=ReexecutionConfig(
-            previous_run_id=result.run_id,
-            step_output_handles=[StepOutputHandle('add_one.compute', 'not_an_output')],
-        ),
-    )
-
-    execution_plan = create_execution_plan(
-        pipeline_def, environment_dict=environment_dict, run_config=run_config
-    )
-
-    with pytest.raises(DagsterStepOutputNotFoundError) as exc_info:
-        execute_plan(
-            execution_plan,
-            environment_dict=environment_dict,
-            run_config=run_config,
-            step_keys_to_execute=['add_two.compute'],
-            instance=instance,
-        )
-
-    assert str(exc_info.value) == (
-        'You specified a step_output_handle in the ReexecutionConfig that does not exist: '
-        'Step add_one.compute does not have output not_an_output.'
-    )
-
-    assert exc_info.value.step_key == 'add_one.compute'
-    assert exc_info.value.output_name == 'not_an_output'
 
 
 def test_execution_plan_reexecution_with_in_memory():
@@ -238,10 +185,7 @@ def test_execution_plan_reexecution_with_in_memory():
     new_run_id = str(uuid.uuid4())
 
     in_memory_run_config = RunConfig(
-        run_id=new_run_id,
-        reexecution_config=ReexecutionConfig(
-            previous_run_id=result.run_id, step_output_handles=[StepOutputHandle('add_one.compute')]
-        ),
+        run_id=new_run_id, reexecution_config=ReexecutionConfig(previous_run_id=result.run_id)
     )
 
     execution_plan = create_execution_plan(
@@ -250,10 +194,9 @@ def test_execution_plan_reexecution_with_in_memory():
 
     with pytest.raises(DagsterInvariantViolationError):
         execute_plan(
-            execution_plan,
+            execution_plan.build_subset_plan(['add_two.compute']),
             environment_dict=environment_dict,
             run_config=in_memory_run_config,
-            step_keys_to_execute=['add_two.compute'],
             instance=instance,
         )
 
@@ -286,8 +229,7 @@ def test_pipeline_step_key_subset_execution():
         run_config=RunConfig(
             run_id=new_run_id,
             reexecution_config=ReexecutionConfig(
-                previous_run_id=result.run_id,
-                step_output_handles=[StepOutputHandle('add_one.compute')],
+                previous_run_id=result.run_id, force_reexecution_step_keys=['add_two.compute']
             ),
             step_keys_to_execute=['add_two.compute'],
         ),
@@ -325,15 +267,14 @@ def test_pipeline_step_key_subset_execution_wrong_step_key_in_subset():
             run_config=RunConfig(
                 run_id=new_run_id,
                 reexecution_config=ReexecutionConfig(
-                    previous_run_id=result.run_id,
-                    step_output_handles=[StepOutputHandle('add_one.compute')],
+                    previous_run_id=result.run_id, force_reexecution_step_keys=['add_two.compute']
                 ),
                 step_keys_to_execute=['nope'],
             ),
         )
 
 
-def test_pipeline_step_key_subset_execution_wrong_step_key_in_step_output_handles():
+def test_pipeline_step_key_subset_execution_wrong_step_key_in_reexecution_config():
     pipeline_def = define_addy_pipeline()
     old_run_id = str(uuid.uuid4())
     environment_dict = env_with_fs({'solids': {'add_one': {'inputs': {'num': {'value': 3}}}}})
@@ -356,40 +297,7 @@ def test_pipeline_step_key_subset_execution_wrong_step_key_in_step_output_handle
             run_config=RunConfig(
                 run_id=new_run_id,
                 reexecution_config=ReexecutionConfig(
-                    previous_run_id=result.run_id,
-                    step_output_handles=[StepOutputHandle('invalid_in_step_output_handles')],
-                ),
-                step_keys_to_execute=['add_two.compute'],
-            ),
-            instance=instance,
-        )
-
-
-def test_pipeline_step_key_subset_execution_wrong_output_name_in_step_output_handles():
-    pipeline_def = define_addy_pipeline()
-    old_run_id = str(uuid.uuid4())
-    instance = DagsterInstance.ephemeral()
-    environment_dict = {'solids': {'add_one': {'inputs': {'num': {'value': 3}}}}}
-    result = execute_pipeline(
-        pipeline_def,
-        environment_dict=env_with_fs(environment_dict),
-        run_config=RunConfig(run_id=old_run_id),
-        instance=instance,
-    )
-    assert result.success
-    assert result.run_id == old_run_id
-
-    new_run_id = str(uuid.uuid4())
-
-    with pytest.raises(DagsterStepOutputNotFoundError):
-        execute_pipeline(
-            pipeline_def,
-            environment_dict=env_with_fs(environment_dict),
-            run_config=RunConfig(
-                run_id=new_run_id,
-                reexecution_config=ReexecutionConfig(
-                    previous_run_id=result.run_id,
-                    step_output_handles=[StepOutputHandle('add_one.compute', 'invalid_output')],
+                    previous_run_id=result.run_id, force_reexecution_step_keys=['nope']
                 ),
                 step_keys_to_execute=['add_two.compute'],
             ),

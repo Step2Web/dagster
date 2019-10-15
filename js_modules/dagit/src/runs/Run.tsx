@@ -150,20 +150,8 @@ export class Run extends React.Component<IRunProps, IRunState> {
       variables.executionParams.stepKeys = [stepKey];
       variables.reexecutionConfig = {
         previousRunId: run.runId,
-        stepOutputHandles: []
+        forceReexecutionStepKeys: [stepKey]
       };
-
-      step.inputs.forEach(input => {
-        const deps = input.dependsOn;
-        deps.forEach(dep => {
-          dep.outputs.forEach(outputOfDependentStep => {
-            variables.reexecutionConfig!.stepOutputHandles.push({
-              stepKey: dep.key,
-              outputName: outputOfDependentStep.name
-            });
-          });
-        });
-      });
     }
 
     const result = await mutation({ variables });

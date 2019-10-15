@@ -29,13 +29,14 @@ class InProcessExecutorChildProcessCommand(ChildProcessCommand):
         run_config = self.run_config.with_tags(pid=str(os.getpid()))
 
         environment_dict = dict(self.environment_dict, execution={'in_process': {}})
-        execution_plan = create_execution_plan(pipeline_def, environment_dict, run_config)
+        execution_plan = create_execution_plan(
+            pipeline_def, environment_dict, run_config
+        ).build_subset_plan([self.step_key])
 
         for step_event in execute_plan_iterator(
             execution_plan,
             environment_dict,
             run_config,
-            step_keys_to_execute=[self.step_key],
             instance=DagsterInstance.from_ref(self.instance_ref),
         ):
             yield step_event
@@ -88,39 +89,34 @@ def bounded_parallel_executor(step_contexts, limit):
 
 class MultiprocessEngine(IEngine):  # pylint: disable=no-init
     @staticmethod
-    def execute(pipeline_context, execution_plan, step_keys_to_execute=None):
+    def execute(pipeline_context, execution_plan, memoization_strategy):
         check.inst_param(pipeline_context, 'pipeline_context', SystemPipelineExecutionContext)
         check.inst_param(execution_plan, 'execution_plan', ExecutionPlan)
-        check.opt_list_param(step_keys_to_execute, 'step_keys_to_execute', of_type=str)
 
-        step_levels = execution_plan.topological_step_levels()
+        step_levels = execution_plan.execution_step_levels()
 
         intermediates_manager = pipeline_context.intermediates_manager
 
         limit = pipeline_context.executor_config.max_concurrent
-
-        step_key_set = None if step_keys_to_execute is None else set(step_keys_to_execute)
 
         yield DagsterEvent.engine_event(
             pipeline_context,
             'Executing steps using multiprocess engine: parent process (pid: {pid})'.format(
                 pid=os.getpid()
             ),
-            event_specific_data=EngineEventData.multiprocess(
-                os.getpid(), step_keys_to_execute=step_key_set
-            ),
+            event_specific_data=EngineEventData.multiprocess(os.getpid()),
         )
 
         # It would be good to implement a reference tracking algorithm here so we could
         # garbage collection results that are no longer needed by any steps
         # https://github.com/dagster-io/dagster/issues/811
         with time_execution_scope() as timer_result:
+            for event in memoization_strategy.generate_events(execution_plan):
+                yield event
+
             for step_level in step_levels:
                 step_contexts_to_execute = []
                 for step in step_level:
-                    if step_key_set and step.key not in step_key_set:
-                        continue
-
                     step_context = pipeline_context.for_step(step)
 
                     if not intermediates_manager.all_inputs_covered(step_context, step):
@@ -133,6 +129,10 @@ class MultiprocessEngine(IEngine):  # pylint: disable=no-init
                                 'Output missing for inputs: {uncovered_inputs}'
                             ).format(uncovered_inputs=uncovered_inputs, step=step.key)
                         )
+                        continue
+
+                    if memoization_strategy.can_skip(step):
+                        yield DagsterEvent.step_skipped_event(step_context)
                         continue
 
                     step_contexts_to_execute.append(step_context)
