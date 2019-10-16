@@ -672,3 +672,9 @@ def fn_param(obj, param_name):
     if not callable(obj):
         raise_with_traceback(_param_type_mismatch_exception(obj, type(lambda: None), param_name))
     return obj
+
+
+def opt_fn_param(obj, param_name):
+    if obj is not None and not callable(obj):
+        raise_with_traceback(_param_type_mismatch_exception(obj, type(lambda: None), param_name))
+    return obj

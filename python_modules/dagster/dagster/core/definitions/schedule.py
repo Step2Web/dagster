@@ -28,7 +28,12 @@ class ScheduleDefinition(object):
         environment_vars (dict): The environment variables to set for the schedule
     '''
 
-    __slots__ = ['_schedule_definition_data', '_execution_params', '_should_execute']
+    __slots__ = [
+        '_schedule_definition_data',
+        '_execution_params',
+        '_environment_dict_fn',
+        '_should_execute',
+    ]
 
     def __init__(
         self,
@@ -36,6 +41,7 @@ class ScheduleDefinition(object):
         cron_schedule,
         pipeline_name,
         environment_dict=None,
+        environment_dict_fn=None,
         tags=None,
         mode="default",
         should_execute=lambda: True,
@@ -59,6 +65,7 @@ class ScheduleDefinition(object):
             'mode': mode,
         }
 
+        self._environment_dict_fn = check.opt_fn_param(environment_dict_fn, 'environment_dict_fn')
         self._should_execute = check.fn_param(should_execute, 'should_execute')
 
     @property
@@ -80,6 +87,10 @@ class ScheduleDefinition(object):
     @property
     def execution_params(self):
         return self._execution_params
+
+    @property
+    def environment_dict_fn(self):
+        return self._environment_dict_fn
 
     @property
     def should_execute(self):

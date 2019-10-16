@@ -13,17 +13,20 @@ def define_scheduler():
         # Returns true if current day is a weekday
         return weekno < 5
 
+    def many_events_every_minute_fn():
+        return {"storage": {"filesystem": {}}}
+
     many_events_every_minute = ScheduleDefinition(
         name="many_events_every_min",
         cron_schedule="* * * * *",
         pipeline_name="many_events",
-        environment_dict={"storage": {"filesystem": {}}},
+        environment_dict_fn=many_events_every_minute_fn,
         should_execute=many_events_every_minute_filter,
     )
 
     log_spew_hourly = ScheduleDefinition(
         name="log_spew_hourly",
-        cron_schedule="0 * * * *",
+        cron_schedule="* * * * *",
         pipeline_name="log_spew",
         environment_dict={"storage": {"filesystem": {}}},
     )
