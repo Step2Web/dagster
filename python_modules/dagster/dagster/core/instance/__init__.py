@@ -11,7 +11,11 @@ from rx import Observable
 from dagster import check, seven
 from dagster.core.definitions.environment_configs import SystemNamedDict
 from dagster.core.errors import DagsterInvalidConfigError, DagsterInvariantViolationError
-from dagster.core.serdes import ConfigurableClass, whitelist_for_serdes
+from dagster.core.serdes import (
+    ConfigurableClass,
+    construct_configurable_class,
+    whitelist_for_serdes,
+)
 from dagster.core.storage.pipeline_run import PipelineRun
 from dagster.core.storage.run_storage_abc import RunStorage
 from dagster.core.types import Field, PermissiveDict, String
@@ -157,10 +161,12 @@ class DagsterInstance:
         check.inst_param(instance_ref, 'instance_ref', InstanceRef)
         check.opt_list_param(fallback_feature_set, 'fallback_feature_set', of_type=str)
 
-        local_artifact_storage = instance_ref.local_artifact_storage_data.rehydrate()
-        run_storage = instance_ref.run_storage_data.rehydrate()
-        event_storage = instance_ref.event_storage_data.rehydrate()
-        compute_log_manager = instance_ref.compute_logs_data.rehydrate()
+        local_artifact_storage = construct_configurable_class(
+            instance_ref.local_artifact_storage_data
+        )
+        run_storage = construct_configurable_class(instance_ref.run_storage_data)
+        event_storage = construct_configurable_class(instance_ref.event_storage_data)
+        compute_log_manager = construct_configurable_class(instance_ref.compute_logs_data)
         feature_set = instance_ref.feature_set or fallback_feature_set
 
         return DagsterInstance(
