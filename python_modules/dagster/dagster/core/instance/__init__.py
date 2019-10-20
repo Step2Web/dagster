@@ -11,7 +11,7 @@ from rx import Observable
 from dagster import check, seven
 from dagster.core.definitions.environment_configs import SystemNamedDict
 from dagster.core.errors import DagsterInvalidConfigError, DagsterInvariantViolationError
-from dagster.core.serdes import ConfigurableClass, whitelist_for_serdes
+from dagster.core.serdes import construct_from_configurable_class_data, whitelist_for_serdes
 from dagster.core.storage.pipeline_run import PipelineRun
 from dagster.core.storage.run_storage_abc import RunStorage
 from dagster.core.types import Field, PermissiveDict, String
@@ -82,6 +82,7 @@ class DagsterInstance:
         compute_log_manager,
         feature_set=None,
         ref=None,
+        info_str=None,
     ):
         from dagster.core.storage.event_log import EventLogStorage
         from dagster.core.storage.root import LocalArtifactStorage
@@ -101,6 +102,7 @@ class DagsterInstance:
         self._ref = check.opt_inst_param(ref, 'ref', InstanceRef)
 
         self._subscribers = defaultdict(list)
+        self._info_str = info_str
 
     @staticmethod
     def ephemeral(tempdir=None):
@@ -121,6 +123,7 @@ class DagsterInstance:
             event_storage=InMemoryEventLogStorage(),
             compute_log_manager=NoOpComputeLogManager(_compute_logs_directory(tempdir)),
             feature_set=feature_set,
+            info_str='Ephemeral',
         )
 
     @staticmethod
@@ -157,11 +160,37 @@ class DagsterInstance:
         check.inst_param(instance_ref, 'instance_ref', InstanceRef)
         check.opt_list_param(fallback_feature_set, 'fallback_feature_set', of_type=str)
 
-        local_artifact_storage = instance_ref.local_artifact_storage_data.rehydrate()
-        run_storage = instance_ref.run_storage_data.rehydrate()
-        event_storage = instance_ref.event_storage_data.rehydrate()
-        compute_log_manager = instance_ref.compute_logs_data.rehydrate()
+        local_artifact_storage = construct_from_configurable_class_data(
+            instance_ref.local_artifact_storage_data
+        )
+        run_storage = construct_from_configurable_class_data(instance_ref.run_storage_data)
+        event_storage = construct_from_configurable_class_data(instance_ref.event_storage_data)
+        compute_log_manager = construct_from_configurable_class_data(instance_ref.compute_logs_data)
         feature_set = instance_ref.feature_set or fallback_feature_set
+
+        def ccd_info_str(ccd):
+            return (
+                '{p}module: {module}\n'
+                '{p}class: {cls}\n'
+                '{p}config:\n'
+                '{p}  {config}'.format(
+                    p='    ', module=ccd.module_name, cls=ccd.class_name, config=ccd.config_yaml
+                )
+            )
+
+        info_str = (
+            'DagsterInstance components:\n\n'
+            '  Local Artifacts Storage:\n{artifact}\n'
+            '  Run Storage:\n{run}\n'
+            '  Event Log Storage:\n{event}\n'
+            '  Compute Log Manager:\n{compute}\n'
+            ''
+        ).format(
+            artifact=ccd_info_str(instance_ref.local_artifact_storage_data),
+            run=ccd_info_str(instance_ref.run_storage_data),
+            event=ccd_info_str(instance_ref.event_storage_data),
+            compute=ccd_info_str(instance_ref.compute_logs_data),
+        )
 
         return DagsterInstance(
             instance_type=InstanceType.PERSISTENT,
@@ -171,6 +200,7 @@ class DagsterInstance:
             compute_log_manager=compute_log_manager,
             feature_set=feature_set,
             ref=instance_ref,
+            info_str=info_str,
         )
 
     @property
@@ -197,24 +227,7 @@ class DagsterInstance:
         return self._local_artifact_storage.base_dir
 
     def info_str(self):
-        def _info(component):
-            if isinstance(component, ConfigurableClass):
-                return component.inst_data.info_str(prefix='    ')
-            return '    {}'.format(component.__class__.__name__)
-
-        return (
-            'DagsterInstance components:\n\n'
-            '  Local Artifacts Storage:\n{artifact}\n'
-            '  Run Storage:\n{run}\n'
-            '  Event Log Storage:\n{event}\n'
-            '  Compute Log Manager:\n{compute}\n'
-            ''.format(
-                artifact=_info(self._local_artifact_storage),
-                run=_info(self._run_storage),
-                event=_info(self._event_storage),
-                compute=_info(self._compute_log_manager),
-            )
-        )
+        return self._info_str
 
     # features
 

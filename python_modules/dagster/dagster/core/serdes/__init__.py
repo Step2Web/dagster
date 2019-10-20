@@ -14,7 +14,7 @@ Why not pickle?
   (in memory, not human readble, etc) just handle the json case effectively.
 '''
 import importlib
-from abc import ABCMeta, abstractmethod, abstractproperty
+from abc import ABCMeta, abstractclassmethod, abstractmethod, abstractproperty, abstractstaticmethod
 from collections import namedtuple
 from enum import Enum
 
@@ -126,136 +126,104 @@ def _deserialize_json_to_dagster_namedtuple(json_str, enum_map, tuple_map):
     return _unpack_value(seven.json.loads(json_str), enum_map=enum_map, tuple_map=tuple_map)
 
 
+def construct_from_configurable_class_data(ccd, **constructor_kwargs):
+    check.inst_param(ccd, 'ccd', ConfigPluginData)
+
+    from dagster.core.errors import DagsterInvalidConfigError
+    from dagster.core.types.evaluator import evaluate_config
+
+    try:
+        module = importlib.import_module(ccd.module_name)
+    except seven.ModuleNotFoundError:
+        check.failed(
+            'Couldn\'t import module {module_name} when attempting to rehydrate the '
+            'configurable class {configurable_class}'.format(
+                module_name=ccd.module_name,
+                configurable_class=ccd.module_name + '.' + ccd.class_name,
+            )
+        )
+    try:
+        klass = getattr(module, ccd.class_name)
+    except AttributeError:
+        check.failed(
+            'Couldn\'t find class {class_name} in module when attempting to rehydrate the '
+            'configurable class {configurable_class}'.format(
+                class_name=ccd.class_name, configurable_class=ccd.module_name + '.' + ccd.class_name
+            )
+        )
+
+    if issubclass(klass, ConfigPlugin):
+        config_dict = yaml.load(ccd.config_yaml)
+        result = evaluate_config(klass.config_type().inst(), config_dict)
+        if not result.success:
+            raise DagsterInvalidConfigError(None, result.errors, config_dict)
+        return klass.from_plugin_config_value(result.value)
+
+    raise check.CheckError(
+        klass,
+        'Class {class_name} in module {module_name} must be ConfigPlugin'.format(
+            class_name=ccd.class_name, module_name=ccd.module_name
+        ),
+    )
+
+
 @whitelist_for_serdes
-class ConfigurableClassData(
-    namedtuple('_ConfigurableClassData', 'module_name class_name config_yaml')
-):
+class ConfigPluginData(namedtuple('_ConfigPluginData', 'module_name class_name config_yaml')):
     '''Serializable tuple describing where to find a class and the config fragment that should
     be used to instantiate it.
-
-    Classes serialized in this way should implement dagster.serdes.ConfigurableClass.
     '''
 
     def __new__(cls, module_name, class_name, config_yaml):
-        return super(ConfigurableClassData, cls).__new__(
+        return super(ConfigPluginData, cls).__new__(
             cls,
             check.str_param(module_name, 'module_name'),
             check.str_param(class_name, 'class_name'),
             check.str_param(config_yaml, 'config_yaml'),
         )
 
-    def info_str(self, prefix=''):
-        return (
-            '{p}module: {module}\n'
-            '{p}class: {cls}\n'
-            '{p}config:\n'
-            '{p}  {config}'.format(
-                p=prefix, module=self.module_name, cls=self.class_name, config=self.config_yaml
-            )
-        )
 
-    def rehydrate(self, **constructor_kwargs):
-        from dagster.core.errors import DagsterInvalidConfigError
-        from dagster.core.types.evaluator import evaluate_config
+class ConfigPlugin(six.with_metaclass(ABCMeta)):
+    '''
+    Plugin for the configuration system.
 
-        try:
-            module = importlib.import_module(self.module_name)
-        except seven.ModuleNotFoundError:
-            check.failed(
-                'Couldn\'t import module {module_name} when attempting to rehydrate the '
-                'configurable class {configurable_class}'.format(
-                    module_name=self.module_name,
-                    configurable_class=self.module_name + '.' + self.class_name,
-                )
-            )
-        try:
-            klass = getattr(module, self.class_name)
-        except AttributeError:
-            check.failed(
-                'Couldn\'t find class {class_name} in module when attempting to rehydrate the '
-                'configurable class {configurable_class}'.format(
-                    class_name=self.class_name,
-                    configurable_class=self.module_name + '.' + self.class_name,
-                )
-            )
+    Allows objects to be constructed in a dynamic fashion via the config system.
 
-        if not issubclass(klass, ConfigurableClass):
-            raise check.CheckError(
-                klass,
-                'class {class_name} in module {module_name}'.format(
-                    class_name=self.class_name, module_name=self.module_name
-                ),
-                ConfigurableClass,
-            )
+    Users can explicitly state where they want to load plugin-driven objects to
+    load from (without changing core code) without a magical registry system.
 
-        config_dict = yaml.load(self.config_yaml)
-        result = evaluate_config(klass.config_type().inst(), config_dict)
-        if not result.success:
-            raise DagsterInvalidConfigError(None, result.errors, config_dict)
-        return klass.from_config_value(self, result.value, **constructor_kwargs)
+    run_storage:
+        module: very_cool_package.run_storage
+        class: SplendidRunStorageConfigPlugin
+        config:
+            magic_word: "quux"
 
-
-class ConfigurableClass(six.with_metaclass(ABCMeta)):
-    '''Abstract mixin for classes that can be rehydrated from config.
-
-    This supports a powerful plugin pattern which avoids both a) a lengthy, hard-to-synchronize list
-    of conditional imports / optional extras_requires in dagster core and b) a magic directory or
-    file in which third parties can place plugin packages. Instead, the intention is to make, e.g.,
-    run storage, pluggable with a config chunk like:
-
-        run_storage:
-            module: very_cool_package.run_storage
-            class: SplendidRunStorage
-            config:
-                magic_word: "quux"
-    
     This same pattern should eventually be viable for other system components, e.g. engines.
 
-    The ConfigurableClass mixin provides the necessary hooks for classes to be instantiated from
-    an instance of ConfigurableClassData.
+    Inherit from config plugin to implement this. It specifies config schema (via the config_type
+    method) and a function that takes that validated config and constructs an object
+    (from_plugin_config_value)
 
-    Pieces of the Dagster system which we wish to make pluggable in this way should consume a config
-    type such as:
-
-        SystemNamedDict(
-            name,
-            {'module': Field(String), 'class': Field(String), 'config': Field(PermissiveDict())},
-        )
     '''
 
-    @abstractproperty
-    def inst_data(self):
-        '''
-        Subclass must be able to return the inst_data as a property if it has been constructed
-        through the from_config_value code path.
-        '''
-
-    @classmethod
-    @abstractmethod
+    @abstractclassmethod
     def config_type(cls):
         '''dagster.ConfigType: The config type against which to validate a config yaml fragment
-        serialized in an instance of ConfigurableClassData.
+        serialized in an instance of ConfigPluginData.
         
         This is usually an instance of dagster.core.definitions.environment_configs.SystemNamedDict.
         '''
 
-    @staticmethod
-    @abstractmethod
-    def from_config_value(inst_data, config_value, **kwargs):
-        '''New up an instance of the ConfigurableClass from a validated config value.
+    @abstractstaticmethod
+    def from_plugin_config_value(plugin_config_value):
+        '''New up an instance from a validated config value.
 
-        Called by ConfigurableClassData.rehydrate.
-        
         Args:
             config_value (dict): The validated config value to use. Typically this should be the
                 `value` attribute of a dagster.core.types.evaluator.evaluation.EvaluateValueResult.
 
 
-        A common pattern is for the implementation to splat the config_value with the kwargs, to
-        align with the signature of the ConfigurableClass's constructor and allow overrides:
-
             @staticmethod
-            def from_config_value(inst_data, config_value, **kwargs):
-                return MyConfigurableClass(inst_data=inst_data, **dict(config_value, **kwargs))
+            def from_plugin_config_value(plugin_config_value):
+                return SomeObject(foo=plugin_config_value['foo'])
 
         '''
