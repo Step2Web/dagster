@@ -1,4 +1,5 @@
 from .builtin_enum import BuiltinEnum
+from .config_plugin import config_plugin
 from .config_schema import (
     input_hydration_config,
     input_selector_schema,
