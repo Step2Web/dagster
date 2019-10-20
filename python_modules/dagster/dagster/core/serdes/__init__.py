@@ -126,6 +126,48 @@ def _deserialize_json_to_dagster_namedtuple(json_str, enum_map, tuple_map):
     return _unpack_value(seven.json.loads(json_str), enum_map=enum_map, tuple_map=tuple_map)
 
 
+def construct_configurable_class(ccd, **constructor_kwargs):
+    check.inst_param(ccd, 'ccd', ConfigurableClassData)
+
+    from dagster.core.errors import DagsterInvalidConfigError
+    from dagster.core.types.evaluator import evaluate_config
+
+    try:
+        module = importlib.import_module(ccd.module_name)
+    except seven.ModuleNotFoundError:
+        check.failed(
+            'Couldn\'t import module {module_name} when attempting to rehydrate the '
+            'configurable class {configurable_class}'.format(
+                module_name=ccd.module_name,
+                configurable_class=ccd.module_name + '.' + ccd.class_name,
+            )
+        )
+    try:
+        klass = getattr(module, ccd.class_name)
+    except AttributeError:
+        check.failed(
+            'Couldn\'t find class {class_name} in module when attempting to rehydrate the '
+            'configurable class {configurable_class}'.format(
+                class_name=ccd.class_name, configurable_class=ccd.module_name + '.' + ccd.class_name
+            )
+        )
+
+    if not issubclass(klass, ConfigurableClass):
+        raise check.CheckError(
+            klass,
+            'class {class_name} in module {module_name}'.format(
+                class_name=ccd.class_name, module_name=ccd.module_name
+            ),
+            ConfigurableClass,
+        )
+
+    config_dict = yaml.load(ccd.config_yaml)
+    result = evaluate_config(klass.config_type().inst(), config_dict)
+    if not result.success:
+        raise DagsterInvalidConfigError(None, result.errors, config_dict)
+    return klass.from_config_value(ccd, result.value, **constructor_kwargs)
+
+
 @whitelist_for_serdes
 class ConfigurableClassData(
     namedtuple('_ConfigurableClassData', 'module_name class_name config_yaml')
