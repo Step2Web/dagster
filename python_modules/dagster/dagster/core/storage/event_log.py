@@ -19,7 +19,6 @@ from dagster.core.events.log import EventRecord
 from dagster.core.execution.stats import build_stats_from_events
 from dagster.core.serdes import (
     ConfigurableClass,
-    ConfigurableClassData,
     deserialize_json_to_dagster_namedtuple,
     serialize_dagster_namedtuple,
 )
@@ -139,7 +138,7 @@ INSERT INTO event_logs (event, dagster_event_type, timestamp) VALUES (?, ?, ?)
 
 
 class SqliteEventLogStorage(WatchableEventLogStorage, ConfigurableClass):
-    def __init__(self, base_dir, inst_data=None):
+    def __init__(self, base_dir):
         '''Note that idempotent initialization of the SQLite database is done on a per-run_id
         basis in the body of store_event, since each run is stored in a separate database.'''
         self._base_dir = check.str_param(base_dir, 'base_dir')
@@ -149,19 +148,14 @@ class SqliteEventLogStorage(WatchableEventLogStorage, ConfigurableClass):
         self._watchers = {}
         self._obs = Observer()
         self._obs.start()
-        self._inst_data = check.opt_inst_param(inst_data, 'inst_data', ConfigurableClassData)
-
-    @property
-    def inst_data(self):
-        return self._inst_data
 
     @classmethod
     def config_type(cls):
         return SystemNamedDict('SqliteEventLogStorageConfig', {'base_dir': Field(String)})
 
     @staticmethod
-    def from_config_value(inst_data, config_value, **kwargs):
-        return SqliteEventLogStorage(inst_data=inst_data, **dict(config_value, **kwargs))
+    def from_config_value(config_value, **kwargs):
+        return SqliteEventLogStorage(**dict(config_value, **kwargs))
 
     @contextmanager
     def _connect(self, run_id):

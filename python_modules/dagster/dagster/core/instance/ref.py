@@ -4,7 +4,10 @@ from collections import namedtuple
 import yaml
 
 from dagster import check
-from dagster.core.serdes import ConfigurableClassData, whitelist_for_serdes
+from dagster.core.serdes import (  # construct_configurable_class,
+    ConfigurableClassData,
+    whitelist_for_serdes,
+)
 
 from .config import DAGSTER_CONFIG_YAML_FILENAME, dagster_feature_set, dagster_instance_config
 
@@ -117,19 +120,3 @@ class InstanceRef(
             event_storage_data=event_storage_data,
             compute_logs_data=compute_logs_data,
         )
-
-    @property
-    def local_artifact_storage(self):
-        return self.local_artifact_storage_data.rehydrate()
-
-    @property
-    def run_storage(self):
-        return self.run_storage_data.rehydrate()
-
-    @property
-    def event_storage(self):
-        return self.event_storage_data.rehydrate()
-
-    @property
-    def compute_logs(self):
-        return self.compute_logs_data.rehydrate()
