@@ -17,7 +17,7 @@ from .utils import create_s3_session
 
 
 class S3ComputeLogManager(ComputeLogManager, ConfigurableClass):
-    def __init__(self, bucket, local_dir=None, inst_data=None):
+    def __init__(self, bucket, local_dir=None):
         self._s3_session = create_s3_session()
         self._s3_bucket = check.str_param(bucket, 'bucket')
         self._download_urls = {}
@@ -27,11 +27,6 @@ class S3ComputeLogManager(ComputeLogManager, ConfigurableClass):
             local_dir = seven.get_system_temp_directory()
 
         self.local_manager = LocalComputeLogManager(local_dir)
-        self._inst_data = check.opt_inst_param(inst_data, 'inst_data', ConfigurableClassData)
-
-    @property
-    def inst_data(self):
-        return self._inst_data
 
     @classmethod
     def config_type(cls):
@@ -41,8 +36,8 @@ class S3ComputeLogManager(ComputeLogManager, ConfigurableClass):
         )
 
     @staticmethod
-    def from_config_value(inst_data, config_value, **kwargs):
-        return S3ComputeLogManager(inst_data=inst_data, **dict(config_value, **kwargs))
+    def from_config_value(config_value, **kwargs):
+        return S3ComputeLogManager(**dict(config_value, **kwargs))
 
     def get_local_path(self, run_id, step_key, io_type):
         return self.local_manager.get_local_path(run_id, step_key, io_type)

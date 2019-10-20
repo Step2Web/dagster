@@ -7,13 +7,8 @@ from dagster.core.types import Field, String
 
 
 class LocalArtifactStorage(ConfigurableClass):
-    def __init__(self, base_dir, inst_data=None):
+    def __init__(self, base_dir):
         self._base_dir = base_dir
-        self._inst_data = check.opt_inst_param(inst_data, 'inst_data', ConfigurableClassData)
-
-    @property
-    def inst_data(self):
-        return self._inst_data
 
     @property
     def base_dir(self):
@@ -31,8 +26,8 @@ class LocalArtifactStorage(ConfigurableClass):
         return os.path.join(self.base_dir, 'schedules')
 
     @staticmethod
-    def from_config_value(inst_data, config_value, **kwargs):
-        return LocalArtifactStorage(inst_data=inst_data, **dict(config_value, **kwargs))
+    def from_config_value(config_value, **kwargs):
+        return LocalArtifactStorage(**dict(config_value, **kwargs))
 
     @classmethod
     def config_type(cls):

@@ -24,22 +24,17 @@ IO_TYPE_EXTENSION = {ComputeIOType.STDOUT: 'out', ComputeIOType.STDERR: 'err'}
 
 
 class LocalComputeLogManager(ComputeLogManager, ConfigurableClass):
-    def __init__(self, base_dir, inst_data=None):
+    def __init__(self, base_dir):
         self._base_dir = base_dir
         self._subscription_manager = LocalComputeLogSubscriptionManager(self)
-        self._inst_data = check.opt_inst_param(inst_data, 'inst_data', ConfigurableClassData)
-
-    @property
-    def inst_data(self):
-        return self._inst_data
 
     @classmethod
     def config_type(cls):
         return SystemNamedDict('SqliteEventLogStorageConfig', {'base_dir': Field(String)})
 
     @staticmethod
-    def from_config_value(inst_data, config_value, **kwargs):
-        return LocalComputeLogManager(inst_data=inst_data, **dict(config_value, **kwargs))
+    def from_config_value(config_value, **kwargs):
+        return LocalComputeLogManager(**dict(config_value, **kwargs))
 
     def _run_directory(self, run_id):
         return os.path.join(self._base_dir, run_id, 'compute_logs')

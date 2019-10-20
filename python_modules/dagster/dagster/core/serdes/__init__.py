@@ -126,6 +126,48 @@ def _deserialize_json_to_dagster_namedtuple(json_str, enum_map, tuple_map):
     return _unpack_value(seven.json.loads(json_str), enum_map=enum_map, tuple_map=tuple_map)
 
 
+def construct_configurable_class(ccd, **constructor_kwargs):
+    check.inst_param(ccd, 'ccd', ConfigurableClassData)
+
+    from dagster.core.errors import DagsterInvalidConfigError
+    from dagster.core.types.evaluator import evaluate_config
+
+    try:
+        module = importlib.import_module(ccd.module_name)
+    except seven.ModuleNotFoundError:
+        check.failed(
+            'Couldn\'t import module {module_name} when attempting to rehydrate the '
+            'configurable class {configurable_class}'.format(
+                module_name=ccd.module_name,
+                configurable_class=ccd.module_name + '.' + ccd.class_name,
+            )
+        )
+    try:
+        klass = getattr(module, ccd.class_name)
+    except AttributeError:
+        check.failed(
+            'Couldn\'t find class {class_name} in module when attempting to rehydrate the '
+            'configurable class {configurable_class}'.format(
+                class_name=ccd.class_name, configurable_class=ccd.module_name + '.' + ccd.class_name
+            )
+        )
+
+    if not issubclass(klass, ConfigurableClass):
+        raise check.CheckError(
+            klass,
+            'class {class_name} in module {module_name}'.format(
+                class_name=ccd.class_name, module_name=ccd.module_name
+            ),
+            ConfigurableClass,
+        )
+
+    config_dict = yaml.load(ccd.config_yaml)
+    result = evaluate_config(klass.config_type().inst(), config_dict)
+    if not result.success:
+        raise DagsterInvalidConfigError(None, result.errors, config_dict)
+    return klass.from_config_value(result.value, **constructor_kwargs)
+
+
 @whitelist_for_serdes
 class ConfigurableClassData(
     namedtuple('_ConfigurableClassData', 'module_name class_name config_yaml')
@@ -143,56 +185,6 @@ class ConfigurableClassData(
             check.str_param(class_name, 'class_name'),
             check.str_param(config_yaml, 'config_yaml'),
         )
-
-    def info_str(self, prefix=''):
-        return (
-            '{p}module: {module}\n'
-            '{p}class: {cls}\n'
-            '{p}config:\n'
-            '{p}  {config}'.format(
-                p=prefix, module=self.module_name, cls=self.class_name, config=self.config_yaml
-            )
-        )
-
-    def rehydrate(self, **constructor_kwargs):
-        from dagster.core.errors import DagsterInvalidConfigError
-        from dagster.core.types.evaluator import evaluate_config
-
-        try:
-            module = importlib.import_module(self.module_name)
-        except seven.ModuleNotFoundError:
-            check.failed(
-                'Couldn\'t import module {module_name} when attempting to rehydrate the '
-                'configurable class {configurable_class}'.format(
-                    module_name=self.module_name,
-                    configurable_class=self.module_name + '.' + self.class_name,
-                )
-            )
-        try:
-            klass = getattr(module, self.class_name)
-        except AttributeError:
-            check.failed(
-                'Couldn\'t find class {class_name} in module when attempting to rehydrate the '
-                'configurable class {configurable_class}'.format(
-                    class_name=self.class_name,
-                    configurable_class=self.module_name + '.' + self.class_name,
-                )
-            )
-
-        if not issubclass(klass, ConfigurableClass):
-            raise check.CheckError(
-                klass,
-                'class {class_name} in module {module_name}'.format(
-                    class_name=self.class_name, module_name=self.module_name
-                ),
-                ConfigurableClass,
-            )
-
-        config_dict = yaml.load(self.config_yaml)
-        result = evaluate_config(klass.config_type().inst(), config_dict)
-        if not result.success:
-            raise DagsterInvalidConfigError(None, result.errors, config_dict)
-        return klass.from_config_value(self, result.value, **constructor_kwargs)
 
 
 class ConfigurableClass(six.with_metaclass(ABCMeta)):
@@ -223,13 +215,6 @@ class ConfigurableClass(six.with_metaclass(ABCMeta)):
         )
     '''
 
-    @abstractproperty
-    def inst_data(self):
-        '''
-        Subclass must be able to return the inst_data as a property if it has been constructed
-        through the from_config_value code path.
-        '''
-
     @classmethod
     @abstractmethod
     def config_type(cls):
@@ -241,7 +226,7 @@ class ConfigurableClass(six.with_metaclass(ABCMeta)):
 
     @staticmethod
     @abstractmethod
-    def from_config_value(inst_data, config_value, **kwargs):
+    def from_config_value(config_value, **kwargs):
         '''New up an instance of the ConfigurableClass from a validated config value.
 
         Called by ConfigurableClassData.rehydrate.
@@ -255,7 +240,7 @@ class ConfigurableClass(six.with_metaclass(ABCMeta)):
         align with the signature of the ConfigurableClass's constructor and allow overrides:
 
             @staticmethod
-            def from_config_value(inst_data, config_value, **kwargs):
-                return MyConfigurableClass(inst_data=inst_data, **dict(config_value, **kwargs))
+            def from_config_value(config_value, **kwargs):
+                return MyConfigurableClass(**dict(config_value, **kwargs))
 
         '''
