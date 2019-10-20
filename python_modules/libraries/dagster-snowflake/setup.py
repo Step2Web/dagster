@@ -38,6 +38,7 @@ def _do_setup(name='dagster-snowflake'):
         ],
         packages=find_packages(exclude=['test']),
         install_requires=['dagster', 'snowflake-connector-python==1.7.*'],
+        # install_requires=['dagster', 'snowflake-connector-python'],
         zip_safe=False,
     )
 
